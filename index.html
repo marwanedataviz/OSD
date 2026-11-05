@@ -1,0 +1,122 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Générateur de graphiques</title>
+<style>
+body{margin:0;padding:20px;background:#e3ebf9;font-family:Inter,system-ui,sans-serif;color:#1a2238}
+.bar{display:flex;gap:14px;align-items:center;flex-wrap:wrap;background:#fff;border-radius:16px;padding:14px 18px;box-shadow:4px 4px 0 #d3dff3}
+label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#66718a;font-weight:700}
+select,button{font:inherit;font-size:14px;border-radius:10px;padding:8px 12px;border:1px solid #c9d6ee;background:#fff}
+button.p{background:#2b59e6;color:#fff;border:0;font-weight:700;cursor:pointer;padding:10px 18px}
+button.s{background:#e3ebf9;color:#2b59e6;border:0;font-weight:700;cursor:pointer}
+#msg{font-size:13px;color:#66718a}
+#list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px;margin-top:18px}
+#list div{background:#fff;border-radius:20px;padding:10px;box-shadow:4px 4px 0 #d3dff3}#list svg{width:100%;height:auto;display:block}
+</style></head><body>
+<div class="bar"><div><label>Mois (graphiques par jour, catégorie, GHU)</label><br><select id="mois"></select></div>
+<button class="p" id="go">Générer tous les graphiques (ZIP)</button><button class="s" id="prev">Actualiser l'aperçu</button><span id="msg">Chargement…</span></div>
+<div id="list"></div>
+<script src="https://grist.numerique.gouv.fr/grist-plugin-api.js"></script>
+<script>
+const MN=["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+const ML=["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
+const C={a:'#9db4f0',b:'#2b59e6',pm:'#2b59e6',pnm:'#14a39a',autre:'#9db4f0',ink:'#1a2238',mut:'#66718a',grid:'#e8edf6'};
+const PAL=['#2b59e6','#14a39a','#7b6ef6','#f08c3c','#9db4f0','#e0558a','#5fb96b','#c9a227','#8a93a8'];
+let R=[],CALC={};
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+// ---------- données ----------
+function compute(){
+ const m={},cat={},ghu={},jour={};
+ R.forEach(r=>{const k=r.cle_mois;if(!k)return;
+  const o=m[k]=m[k]||{act:0,vu:0};o.act++;
+  if(r.est_unique){o.vu++;
+   ((cat[k]=cat[k]||{})[r.categorie||'Autre']=(cat[k][r.categorie||'Autre']||0)+1);
+   ((ghu[k]=ghu[k]||{})[r.ghu||'Indéterminé']=(ghu[k][r.ghu||'Indéterminé']||0)+1);}
+  ((jour[k]=jour[k]||{})[r.jour]=(jour[k][r.jour]||0)+1);});
+ CALC={m,cat,ghu,jour};
+}
+const val=(y,mo,f)=>{const o=CALC.m[y*100+mo];return o?(f==='moy'?Math.round(o.vu/30*10)/10:o[f]):null};
+const evo=(f,mo)=>{const a=val(2025,mo,f),b=val(2026,mo,f);return a&&b?Math.round((b-a)/a*1000)/10:null};
+// ---------- gabarit carte (SVG 1200x675) ----------
+const W=1200,H=675,PL=70,PR=48,PT=235,PB=75;
+function card(tag,t1,t2,sub,body,legend){
+ let lg='';(legend||[]).forEach((l,i)=>{lg+=`<rect x="${48+i*130}" y="188" width="14" height="14" rx="4" fill="${l[1]}"/><text x="${68+i*130}" y="200" font-size="14" fill="${C.ink}">${esc(l[0])}</text>`});
+ const tw=tag.length*8.6+28;
+ return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Inter,Arial,sans-serif">
+<rect width="${W}" height="${H}" rx="28" fill="#fff"/>
+<rect x="48" y="40" width="${tw}" height="24" rx="12" fill="#3b5bdb"/><text x="${48+tw/2}" y="56" text-anchor="middle" font-size="11.5" font-weight="700" letter-spacing="1.2" fill="#fff">${esc(tag.toUpperCase())}</text>
+<text x="48" y="112" font-family="Georgia,'Times New Roman',serif" font-size="36" font-weight="700" fill="${C.ink}">${esc(t1)}<tspan fill="${C.b}">${esc(t2||'')}</tspan></text>
+<text x="48" y="146" font-size="15" fill="${C.mut}">${esc(sub)}</text><line x1="48" x2="${W-48}" y1="162" y2="162" stroke="#e3e8f2"/>${lg}${body}
+<text x="48" y="${H-22}" font-size="12" fill="#8a93a8">Source : Orbis &amp; Moi — Grist</text></svg>`}
+function axes(max,step){let s='';const ph=H-PT-PB;for(let v=0;v<=max+1e-9;v+=step){const y=PT+ph-v/max*ph;s+=`<line x1="${PL}" x2="${W-PR}" y1="${y}" y2="${y}" stroke="${C.grid}"/><text x="${PL-8}" y="${y+4}" text-anchor="end" font-size="12" fill="#8a93a8">${v}</text>`}return s}
+const nice=m=>{const s=Math.pow(10,Math.floor(Math.log10(m||1)));for(const k of [1,2,2.5,5,10]){if(m/(k*s)<=6)return[k*s*Math.ceil(m/(k*s)/ (m/(k*s)>0?1:1)),k*s]}return[m,m/5]};
+function scale(max){let st=Math.pow(10,Math.floor(Math.log10(max||1)));for(const k of[1,2,5,10]){if(max/(k*st)<=6){st*=k;break}}return[Math.ceil(max/st)*st,st]}
+function bars(labels,series,colors,fmt){ // series: array of arrays
+ const all=series.flat().filter(v=>v!=null);const [max,st]=scale(Math.max(...all,1));const ph=H-PT-PB,gw=(W-PL-PR)/labels.length,n=series.length,bw=Math.min(n>1?24:34,gw/(n+1));
+ let s=axes(max,st);
+ labels.forEach((l,i)=>{const x=PL+i*gw+gw/2;
+  series.forEach((sr,j)=>{const v=sr[i];if(v==null)return;const h=Math.max(v/max*ph,1),bx=x-n*bw/2-(n-1)+j*(bw+2);
+   s+=`<rect x="${bx}" y="${PT+ph-h}" width="${bw}" height="${h}" rx="5" fill="${colors[j]}"/><text x="${bx+bw/2}" y="${PT+ph-h-6}" text-anchor="middle" font-size="${n>1?10.5:12}" fill="#44506b">${fmt?fmt(v):v}</text>`});
+  s+=`<text x="${x}" y="${H-PB+22}" text-anchor="middle" font-size="${labels.length>14?11:13}" fill="#44506b">${esc(l)}</text>`});
+ return s}
+function evoBars(labels,vals){ // peut être négatif
+ const a=vals.filter(v=>v!=null);const mx=Math.max(...a.map(Math.abs),5);const [max,st]=scale(mx);const ph=H-PT-PB,mid=PT+ph/2,gw=(W-PL-PR)/labels.length,bw=30;
+ let s='';for(let v=-max;v<=max+1e-9;v+=st){const y=mid-v/max*(ph/2);s+=`<line x1="${PL}" x2="${W-PR}" y1="${y}" y2="${y}" stroke="${v===0?'#9aa5bd':C.grid}"/><text x="${PL-8}" y="${y+4}" text-anchor="end" font-size="12" fill="#8a93a8">${v}%</text>`}
+ labels.forEach((l,i)=>{const x=PL+i*gw+gw/2,v=vals[i];
+  if(v!=null){const h=Math.abs(v)/max*ph/2,y=v>=0?mid-h:mid;s+=`<rect x="${x-bw/2}" y="${y}" width="${bw}" height="${Math.max(h,1)}" rx="5" fill="${v>=0?C.b:'#e0558a'}"/><text x="${x}" y="${v>=0?y-6:y+h+14}" text-anchor="middle" font-size="12" fill="#44506b">${v>0?'+':''}${v}%</text>`}
+  s+=`<text x="${x}" y="${H-PB+22}" text-anchor="middle" font-size="13" fill="#44506b">${l}</text>`});
+ return s}
+function donut(items){ // [[label,val]]
+ const tot=items.reduce((a,b)=>a+b[1],0)||1,cx=330,cy=PT+(H-PT-PB)/2,R0=135,R1=75;let ang=-Math.PI/2,s='',ly=PT+10;
+ items.forEach((it,i)=>{const f=it[1]/tot,a2=ang+f*2*Math.PI,lg=f>.5?1:0,col=PAL[i%PAL.length];
+  const p=(r,a)=>[cx+r*Math.cos(a),cy+r*Math.sin(a)];
+  if(f>=.9999){s+=`<circle cx="${cx}" cy="${cy}" r="${(R0+R1)/2}" fill="none" stroke="${col}" stroke-width="${R0-R1}"/>`}
+  else{const[x1,y1]=p(R0,ang),[x2,y2]=p(R0,a2),[x3,y3]=p(R1,a2),[x4,y4]=p(R1,ang);s+=`<path d="M${x1},${y1} A${R0},${R0} 0 ${lg} 1 ${x2},${y2} L${x3},${y3} A${R1},${R1} 0 ${lg} 0 ${x4},${y4}Z" fill="${col}" stroke="#fff" stroke-width="2"/>`}
+  if(f>.06){const[mx,my]=p((R0+R1)/2,(ang+a2)/2);s+=`<text x="${mx}" y="${my+4}" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">${(f*100).toFixed(1)}%</text>`}
+  s+=`<rect x="640" y="${ly+i*30}" width="16" height="16" rx="4" fill="${col}"/><text x="664" y="${ly+i*30+13}" font-size="15" fill="${C.ink}">${esc(it[0])}</text><text x="${W-PR}" y="${ly+i*30+13}" text-anchor="end" font-size="15" font-weight="700" fill="${C.ink}">${it[1]}</text>`;
+  ang=a2});
+ s+=`<text x="${cx}" y="${cy-2}" text-anchor="middle" font-family="Georgia,serif" font-size="34" font-weight="700" fill="${C.ink}">${tot}</text><text x="${cx}" y="${cy+20}" text-anchor="middle" font-size="13" fill="${C.mut}">visiteurs uniques</text>`;
+ return s}
+// ---------- les 8 graphiques ----------
+function charts(){
+ const k=+document.getElementById('mois').value,y=Math.floor(k/100),mo=k%100,mt=ML[mo-1]+' '+y;
+ const L12=MN,rng=[...Array(12).keys()].map(i=>i+1);
+ const out=[];
+ out.push(['01_Activites_par_mois',card('Activités','Activités par mois : 2025 et ',2026+'','Nombre d’activités enregistrées chaque mois',bars(L12,[rng.map(m=>val(2025,m,'act')),rng.map(m=>val(2026,m,'act'))],[C.a,C.b]),[['2025',C.a],['2026',C.b]])]);
+ out.push(['02_Activites_evolution',card('Activités','Évolution des activités : ','2026 vs 2025','Variation en % par rapport au même mois de 2025',evoBars(L12,rng.map(m=>evo('act',m))))]);
+ const jr=CALC.jour[k]||{},nd=new Date(y,mo,0).getDate(),dl=[...Array(nd).keys()].map(i=>i+1);
+ out.push(['03_Activites_par_jour_'+k,card('Activités','Activités par jour : ',mt,'Nombre d’activités enregistrées chaque jour du mois',bars(dl.map(String),[dl.map(d=>jr[d]||0)],[C.b]))]);
+ out.push(['04_Visiteurs_par_mois',card('Visiteurs uniques','Visiteurs uniques par mois : 2025 et ',2026+'','Un visiteur est compté une fois par mois',bars(L12,[rng.map(m=>val(2025,m,'vu')),rng.map(m=>val(2026,m,'vu'))],[C.a,C.b]),[['2025',C.a],['2026',C.b]])]);
+ out.push(['05_Visiteurs_evolution',card('Visiteurs uniques','Évolution des visiteurs : ','2026 vs 2025','Variation en % par rapport au même mois de 2025',evoBars(L12,rng.map(m=>evo('vu',m))))]);
+ out.push(['06_Visiteurs_moyenne_par_jour',card('Visiteurs uniques','Visiteurs par jour en moyenne : 2025 et ',2026+'','Visiteurs uniques du mois divisés par 30',bars(L12,[rng.map(m=>val(2025,m,'moy')),rng.map(m=>val(2026,m,'moy'))],[C.a,C.b]),[['2025',C.a],['2026',C.b]])]);
+ const srt=o=>Object.entries(o||{}).sort((a,b)=>b[1]-a[1]);
+ out.push(['07_Visiteurs_par_categorie_'+k,card('Visiteurs uniques','Visiteurs par catégorie : ',mt,'Répartition des visiteurs uniques du mois',donut(srt(CALC.cat[k])))]);
+ out.push(['08_Visiteurs_par_GHU_'+k,card('Visiteurs uniques','Visiteurs par GHU : ',mt,'Répartition des visiteurs uniques du mois',donut(srt(CALC.ghu[k])))]);
+ return out}
+// ---------- PNG + ZIP ----------
+function toPNG(svg){return new Promise((ok,ko)=>{const im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=W*2;c.height=H*2;const x=c.getContext('2d');x.scale(2,2);x.drawImage(im,0,0);c.toBlob(b=>b.arrayBuffer().then(ok),'image/png')};im.onerror=ko;im.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)})}
+const T=(()=>{const t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+const crc=u=>{let c=~0;for(const b of u)c=T[(c^b)&255]^(c>>>8);return ~c>>>0};
+function zip(files){const enc=new TextEncoder(),parts=[],cen=[];let off=0;
+ files.forEach(([n,d])=>{const nm=enc.encode(n),cr=crc(d),h=new DataView(new ArrayBuffer(30));
+  h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x0800,true);h.setUint32(14,cr,true);h.setUint32(18,d.length,true);h.setUint32(22,d.length,true);h.setUint16(26,nm.length,true);
+  parts.push(h.buffer,nm,d);
+  const c=new DataView(new ArrayBuffer(46));c.setUint32(0,0x02014b50,true);c.setUint16(4,20,true);c.setUint16(6,20,true);c.setUint16(8,0x0800,true);c.setUint32(16,cr,true);c.setUint32(20,d.length,true);c.setUint32(24,d.length,true);c.setUint16(28,nm.length,true);c.setUint32(42,off,true);
+  cen.push(c.buffer,nm);off+=30+nm.length+d.length});
+ const cs=cen.reduce((a,b)=>a+b.byteLength,0),e=new DataView(new ArrayBuffer(22));
+ e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);e.setUint32(12,cs,true);e.setUint32(16,off,true);
+ return new Blob([...parts,...cen,e.buffer],{type:'application/zip'})}
+// ---------- interface ----------
+const $=id=>document.getElementById(id);
+function preview(){$('list').innerHTML=charts().map(c=>`<div>${c[1]}</div>`).join('')}
+async function generate(){$('msg').textContent='Génération en cours…';
+ const files=[];for(const[n,svg]of charts())files.push([n+'.png',new Uint8Array(await toPNG(svg))]);
+ const a=document.createElement('a');a.href=URL.createObjectURL(zip(files));a.download='graphiques_orbis_moi.zip';a.click();$('msg').textContent=files.length+' graphiques générés.'}
+async function load(t){
+ try{R=[];const d=await grist.docApi.fetchTable('Classeur3333');
+  for(let i=0;i<d.id.length;i++)R.push({cle_mois:d.cle_mois[i],jour:d.jour[i],categorie:d.categorie[i],ghu:d.ghu[i],est_unique:d.est_unique[i]});}catch(e){$('msg').textContent='Erreur de lecture : '+e.message;return}
+ compute();const ks=Object.keys(CALC.m).map(Number).filter(k=>k>=202501).sort((a,b)=>a-b);
+ const cur=$('mois').value;$('mois').innerHTML=ks.map(k=>`<option value="${k}">${MN[k%100-1]} ${Math.floor(k/100)}</option>`).join('');
+ $('mois').value=cur&&ks.includes(+cur)?cur:ks[ks.length-1];
+ $('msg').textContent=R.length+' lignes lues.';preview()}
+$('go').onclick=generate;$('prev').onclick=()=>load();$('mois').onchange=preview;
+if(window.grist){grist.ready({requiredAccess:'full'});load()}
+else if(window.MOCK){}
+</script></body></html>
