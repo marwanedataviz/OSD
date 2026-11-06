@@ -32,7 +32,8 @@ function compute(){
   ((jour[k]=jour[k]||{})[r.jour]=(jour[k][r.jour]||0)+1);});
  CALC={m,cat,ghu,jour};
 }
-const val=(y,mo,f)=>{const o=CALC.m[y*100+mo];return o?(f==='moy'?Math.round(o.vu/30*10)/10:o[f]):null};
+const dim=(y,mo)=>new Date(y,mo,0).getDate();
+const val=(y,mo,f)=>{const o=CALC.m[y*100+mo];return o?(f==='moy'?Math.round(o.vu/dim(y,mo)*10)/10:o[f]):null};
 const evo=(f,mo)=>{const a=val(2025,mo,f),b=val(2026,mo,f);return a&&b?Math.round((b-a)/a*1000)/10:null};
 // ---------- gabarit carte (SVG 1200x675) ----------
 const W=1200,H=675,PL=70,PR=48,PT=235,PB=75;
@@ -79,7 +80,7 @@ const fr=n=>Math.round(n).toLocaleString('fr-FR').replace(/[\u202f\u00a0]/g,' ')
 function synthese(k,y,mo,mt){
  const o=CALC.m[k]||{act:0,vu:0},jr=CALC.jour[k]||{};
  let pj=0,pv=0;Object.entries(jr).forEach(([d,v])=>{if(v>pv){pv=v;pj=+d}});
- const moy=(Math.round(o.vu/30*10)/10).toString().replace('.',',');
+ const moy=(Math.round(o.vu/dim(y,mo)*10)/10).toString().replace('.',',');
  const tot=yy=>Object.entries(CALC.m).filter(([kk])=>Math.floor(kk/100)===yy).reduce((a,[,v])=>a+v.act,0);
  const T=[[fr(o.act),'Activités – '+ML[mo-1],C.b],[fr(o.vu),'Visiteurs uniques – '+ML[mo-1],C.pnm],[fr(pv),'Pic du mois',  '#e0558a',pj?'activités le '+pj+' '+ML[mo-1]:''],[moy,'Moyenne visiteurs / jour','#f08c3c']];
  let s='';T.forEach((t,i)=>{const x=48+i*281;
@@ -99,7 +100,7 @@ function charts(){
  out.push(['03_Activites_par_jour_'+k,card('Activités','Activités par jour : ',mt,'Nombre d’activités enregistrées chaque jour du mois',bars(dl.map(String),[dl.map(d=>jr[d]||0)],[C.b]))]);
  out.push(['04_Visiteurs_par_mois',card('Visiteurs uniques','Visiteurs uniques par mois : 2025 et ',2026+'','Un visiteur est compté une fois par mois',bars(L12,[rng.map(m=>val(2025,m,'vu')),rng.map(m=>val(2026,m,'vu'))],[C.a,C.b]),[['2025',C.a],['2026',C.b]])]);
  out.push(['05_Visiteurs_evolution',card('Visiteurs uniques','Évolution des visiteurs : ','2026 vs 2025','Variation en % par rapport au même mois de 2025',evoBars(L12,rng.map(m=>evo('vu',m))))]);
- out.push(['06_Visiteurs_moyenne_par_jour',card('Visiteurs uniques','Visiteurs par jour en moyenne : 2025 et ',2026+'','Visiteurs uniques du mois divisés par 30',bars(L12,[rng.map(m=>val(2025,m,'moy')),rng.map(m=>val(2026,m,'moy'))],[C.a,C.b]),[['2025',C.a],['2026',C.b]])]);
+ out.push(['06_Visiteurs_moyenne_par_jour',card('Visiteurs uniques','Visiteurs par jour en moyenne : 2025 et ',2026+'','Visiteurs uniques du mois divisés par le nombre de jours du mois',bars(L12,[rng.map(m=>val(2025,m,'moy')),rng.map(m=>val(2026,m,'moy'))],[C.a,C.b]),[['2025',C.a],['2026',C.b]])]);
  const srt=o=>Object.entries(o||{}).sort((a,b)=>b[1]-a[1]);
  out.push(['07_Visiteurs_par_categorie_'+k,card('Visiteurs uniques','Visiteurs par catégorie : ',mt,'Répartition des visiteurs uniques du mois',donut(srt(CALC.cat[k])))]);
  out.push(['08_Visiteurs_par_GHU_'+k,card('Visiteurs uniques','Visiteurs par GHU : ',mt,'Répartition des visiteurs uniques du mois',donut(srt(CALC.ghu[k])))]);
@@ -124,7 +125,7 @@ async function generate(){$('msg').textContent='Génération en cours…';
  const files=[];for(const[n,svg]of charts())files.push([n+'.png',new Uint8Array(await toPNG(svg))]);
  const a=document.createElement('a');a.href=URL.createObjectURL(zip(files));a.download='graphiques_orbis_moi.zip';a.click();$('msg').textContent=files.length+' graphiques générés.'}
 async function load(t){
- try{R=[];const d=await grist.docApi.fetchTable('Classeur3333');
+ try{R=[];const d=await grist.docApi.fetchTable('Donnees_brutes');
   for(let i=0;i<d.id.length;i++)R.push({cle_mois:d.cle_mois[i],jour:d.jour[i],categorie:d.categorie[i],ghu:d.ghu[i],est_unique:d.est_unique[i]});}catch(e){$('msg').textContent='Erreur de lecture : '+e.message;return}
  compute();const ks=Object.keys(CALC.m).map(Number).filter(k=>k>=202501).sort((a,b)=>a-b);
  const cur=$('mois').value;$('mois').innerHTML=ks.map(k=>`<option value="${k}">${MN[k%100-1]} ${Math.floor(k/100)}</option>`).join('');
