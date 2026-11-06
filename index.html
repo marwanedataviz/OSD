@@ -8,7 +8,7 @@ button.p{background:#2b59e6;color:#fff;border:0;font-weight:700;cursor:pointer;p
 button.s{background:#e3ebf9;color:#2b59e6;border:0;font-weight:700;cursor:pointer}
 #msg{font-size:13px;color:#66718a}
 #list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px;margin-top:18px}
-#list div{background:#fff;border-radius:20px;padding:10px;box-shadow:4px 4px 0 #d3dff3}#list svg{width:100%;height:auto;display:block}
+#list div{background:#fff;border-radius:20px;padding:10px;box-shadow:4px 4px 0 #d3dff3}#list div:first-child{grid-column:1/-1}#list svg{width:100%;height:auto;display:block}
 </style></head><body>
 <div class="bar"><div><label>Mois (graphiques par jour, catégorie, GHU)</label><br><select id="mois"></select></div>
 <button class="p" id="go">Générer tous les graphiques (ZIP)</button><button class="s" id="prev">Actualiser l'aperçu</button><span id="msg">Chargement…</span></div>
@@ -36,15 +36,15 @@ const val=(y,mo,f)=>{const o=CALC.m[y*100+mo];return o?(f==='moy'?Math.round(o.v
 const evo=(f,mo)=>{const a=val(2025,mo,f),b=val(2026,mo,f);return a&&b?Math.round((b-a)/a*1000)/10:null};
 // ---------- gabarit carte (SVG 1200x675) ----------
 const W=1200,H=675,PL=70,PR=48,PT=235,PB=75;
-function card(tag,t1,t2,sub,body,legend){
+function card(tag,t1,t2,sub,body,legend,hh){hh=hh||H;
  let lg='';(legend||[]).forEach((l,i)=>{lg+=`<rect x="${48+i*130}" y="188" width="14" height="14" rx="4" fill="${l[1]}"/><text x="${68+i*130}" y="200" font-size="14" fill="${C.ink}">${esc(l[0])}</text>`});
  const tw=tag.length*8.6+28;
- return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Inter,Arial,sans-serif">
-<rect width="${W}" height="${H}" rx="28" fill="#fff"/>
+ return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${hh}" viewBox="0 0 ${W} ${hh}" font-family="Inter,Arial,sans-serif">
+<rect width="${W}" height="${hh}" rx="28" fill="#fff"/>
 <rect x="48" y="40" width="${tw}" height="24" rx="12" fill="#3b5bdb"/><text x="${48+tw/2}" y="56" text-anchor="middle" font-size="11.5" font-weight="700" letter-spacing="1.2" fill="#fff">${esc(tag.toUpperCase())}</text>
 <text x="48" y="112" font-family="Georgia,'Times New Roman',serif" font-size="36" font-weight="700" fill="${C.ink}">${esc(t1)}<tspan fill="${C.b}">${esc(t2||'')}</tspan></text>
 <text x="48" y="146" font-size="15" fill="${C.mut}">${esc(sub)}</text><line x1="48" x2="${W-48}" y1="162" y2="162" stroke="#e3e8f2"/>${lg}${body}
-<text x="48" y="${H-22}" font-size="12" fill="#8a93a8">Source : Orbis &amp; Moi — Grist</text></svg>`}
+<text x="48" y="${hh-22}" font-size="12" fill="#8a93a8">Source : Orbis &amp; Moi — Grist</text></svg>`}
 function axes(max,step){let s='';const ph=H-PT-PB;for(let v=0;v<=max+1e-9;v+=step){const y=PT+ph-v/max*ph;s+=`<line x1="${PL}" x2="${W-PR}" y1="${y}" y2="${y}" stroke="${C.grid}"/><text x="${PL-8}" y="${y+4}" text-anchor="end" font-size="12" fill="#8a93a8">${v}</text>`}return s}
 const nice=m=>{const s=Math.pow(10,Math.floor(Math.log10(m||1)));for(const k of [1,2,2.5,5,10]){if(m/(k*s)<=6)return[k*s*Math.ceil(m/(k*s)/ (m/(k*s)>0?1:1)),k*s]}return[m,m/5]};
 function scale(max){let st=Math.pow(10,Math.floor(Math.log10(max||1)));for(const k of[1,2,5,10]){if(max/(k*st)<=6){st*=k;break}}return[Math.ceil(max/st)*st,st]}
@@ -74,11 +74,25 @@ function donut(items){ // [[label,val]]
   ang=a2});
  s+=`<text x="${cx}" y="${cy-2}" text-anchor="middle" font-family="Georgia,serif" font-size="34" font-weight="700" fill="${C.ink}">${tot}</text><text x="${cx}" y="${cy+20}" text-anchor="middle" font-size="13" fill="${C.mut}">visiteurs uniques</text>`;
  return s}
+
+const fr=n=>Math.round(n).toLocaleString('fr-FR').replace(/[\u202f\u00a0]/g,' ');
+function synthese(k,y,mo,mt){
+ const o=CALC.m[k]||{act:0,vu:0},jr=CALC.jour[k]||{};
+ let pj=0,pv=0;Object.entries(jr).forEach(([d,v])=>{if(v>pv){pv=v;pj=+d}});
+ const moy=(Math.round(o.vu/30*10)/10).toString().replace('.',',');
+ const tot=yy=>Object.entries(CALC.m).filter(([kk])=>Math.floor(kk/100)===yy).reduce((a,[,v])=>a+v.act,0);
+ const T=[[fr(o.act),'Activités – '+ML[mo-1],C.b],[fr(o.vu),'Visiteurs uniques – '+ML[mo-1],C.pnm],[fr(pv),'Pic du mois',  '#e0558a',pj?'activités le '+pj+' '+ML[mo-1]:''],[moy,'Moyenne visiteurs / jour','#f08c3c']];
+ let s='';T.forEach((t,i)=>{const x=48+i*281;
+  s+=`<rect x="${x}" y="185" width="261" height="135" rx="16" fill="#f7f9fd" stroke="#e3e8f2"/><text x="${x+130}" y="248" text-anchor="middle" font-family="Georgia,serif" font-size="46" font-weight="700" fill="${t[2]}">${esc(t[0])}</text><text x="${x+130}" y="282" text-anchor="middle" font-size="12" font-weight="700" letter-spacing="1" fill="${C.mut}">${esc(t[1].toUpperCase())}</text>${t[3]?`<text x="${x+130}" y="302" text-anchor="middle" font-size="12" fill="#8a93a8">${esc(t[3])}</text>`:''}`});
+ [[tot(2025),'activités en 2025','#7a93e6'],[tot(2026),'activités en 2026 (à ce jour)',C.b]].forEach((t,i)=>{const x=48+i*562;
+  s+=`<rect x="${x}" y="340" width="542" height="80" rx="16" fill="#fff" stroke="#c9d6ee" stroke-dasharray="4 4"/><text x="${x+24}" y="392" font-family="Georgia,serif" font-size="40" font-weight="700" fill="${t[2]}">${fr(t[0])}<tspan dx="16" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="400" fill="${C.ink}">${esc(t[1])}</tspan></text>`});
+ return card('Synthèse','Synthèse des chiffres : ',mt,'Chiffres clés du mois choisi et totaux annuels',s,null,480)}
 // ---------- les 8 graphiques ----------
 function charts(){
  const k=+document.getElementById('mois').value,y=Math.floor(k/100),mo=k%100,mt=ML[mo-1]+' '+y;
  const L12=MN,rng=[...Array(12).keys()].map(i=>i+1);
  const out=[];
+ out.push(['00_Synthese_'+k,synthese(k,y,mo,mt)]);
  out.push(['01_Activites_par_mois',card('Activités','Activités par mois : 2025 et ',2026+'','Nombre d’activités enregistrées chaque mois',bars(L12,[rng.map(m=>val(2025,m,'act')),rng.map(m=>val(2026,m,'act'))],[C.a,C.b]),[['2025',C.a],['2026',C.b]])]);
  out.push(['02_Activites_evolution',card('Activités','Évolution des activités : ','2026 vs 2025','Variation en % par rapport au même mois de 2025',evoBars(L12,rng.map(m=>evo('act',m))))]);
  const jr=CALC.jour[k]||{},nd=new Date(y,mo,0).getDate(),dl=[...Array(nd).keys()].map(i=>i+1);
@@ -91,7 +105,7 @@ function charts(){
  out.push(['08_Visiteurs_par_GHU_'+k,card('Visiteurs uniques','Visiteurs par GHU : ',mt,'Répartition des visiteurs uniques du mois',donut(srt(CALC.ghu[k])))]);
  return out}
 // ---------- PNG + ZIP ----------
-function toPNG(svg){return new Promise((ok,ko)=>{const im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=W*2;c.height=H*2;const x=c.getContext('2d');x.scale(2,2);x.drawImage(im,0,0);c.toBlob(b=>b.arrayBuffer().then(ok),'image/png')};im.onerror=ko;im.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)})}
+function toPNG(svg){return new Promise((ok,ko)=>{const im=new Image();im.onload=()=>{const hh=+(svg.match(/height="(\d+)"/)||[0,H])[1];const c=document.createElement('canvas');c.width=W*2;c.height=hh*2;const x=c.getContext('2d');x.scale(2,2);x.drawImage(im,0,0);c.toBlob(b=>b.arrayBuffer().then(ok),'image/png')};im.onerror=ko;im.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)})}
 const T=(()=>{const t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
 const crc=u=>{let c=~0;for(const b of u)c=T[(c^b)&255]^(c>>>8);return ~c>>>0};
 function zip(files){const enc=new TextEncoder(),parts=[],cen=[];let off=0;
